@@ -232,15 +232,21 @@ restore() {
 cmd="${1:-}"
 case "$cmd" in
   stop)
+    # Optional: video-wallpaper stop --no-restore  (used when about to set a new still)
+    no_restore=0
+    [[ "${2:-}" == "--no-restore" || "${2:-}" == "no-restore" ]] && no_restore=1
     stop
-    # restore last still image if known
-    if [[ -f "$HOME/.local/state/caelestia/wallpaper/path.txt" ]]; then
-      still=$(cat "$HOME/.local/state/caelestia/wallpaper/path.txt")
-      # avoid re-applying a video thumb path if that's what was saved
-      if [[ -f "$still" ]] && ! is_video "$still"; then
-        caelestia wallpaper -f "$still" 2>/dev/null || true
+    if [[ "$no_restore" -eq 0 ]]; then
+      # restore last still image if known (not a video path)
+      if [[ -f "$HOME/.local/state/caelestia/wallpaper/path.txt" ]]; then
+        still=$(cat "$HOME/.local/state/caelestia/wallpaper/path.txt")
+        if [[ -f "$still" ]] && ! is_video "$still"; then
+          caelestia wallpaper -f "$still" 2>/dev/null || true
+        fi
       fi
     fi
+    # Always re-enable still wallpaper layer (video mode turns it off)
+    set_wallpaper_enabled true
     echo "Video wallpaper stopped"
     ;;
   stop-soft)

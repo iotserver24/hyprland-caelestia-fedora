@@ -26,6 +26,9 @@ Searcher {
     readonly property string videoThumbDir: `${Paths.cache}/video-thumbs`
     // Merged stills + videos for launcher (>wallpaper) and Nexus
     property list<var> combinedList: []
+    readonly property string binDir: `${Paths.home}/.local/bin`
+    readonly property string videoWallBin: `${binDir}/video-wallpaper`
+    readonly property string caelestiaBin: `${binDir}/caelestia`
 
     function getCategoryFor(w: FileSystemEntry): string {
         const path = w.path || "";
@@ -69,25 +72,37 @@ Searcher {
 
     function setRandom(): void {
         // Prefer still images for random — video walls are intentional
-        Quickshell.execDetached(["sh", "-c", "video-wallpaper stop-soft 2>/dev/null; caelestia wallpaper -r " + smartArg.join(" ")]);
+        Quickshell.execDetached(["sh", "-c", `export PATH="${root.binDir}:$PATH"; ${JSON.stringify(root.videoWallBin)} stop --no-restore 2>/dev/null; ${JSON.stringify(root.caelestiaBin)} wallpaper -r ${smartArg.map(a => JSON.stringify(a)).join(" ")}`]);
     }
 
     function persistCurrentPath(path: string): void {
-        // Keep path.txt in sync so FileView doesn't snap actualCurrent back
+        // Keep path.txt in sync so FileView reload does not snap actualCurrent back
         Quickshell.execDetached(["sh", "-c", `mkdir -p "$(dirname -- ${JSON.stringify(root.currentNamePath)})" && printf '%s\\n' ${JSON.stringify(path)} > ${JSON.stringify(root.currentNamePath)}`]);
     }
 
     function setWallpaper(path: string): void {
+        if (!path)
+            return;
         actualCurrent = path;
         showPreview = false;
+        previewPath = "";
+
+        const pathQ = JSON.stringify(path);
+        const vw = JSON.stringify(root.videoWallBin);
+        const ca = JSON.stringify(root.caelestiaBin);
+        const smart = smartArg.map(a => JSON.stringify(a)).join(" ");
+        const pathExport = `export PATH=${JSON.stringify(root.binDir + ":")}"$PATH"`;
+
         if (isVideo(path)) {
-            // Write video path first so FileView reload does not revert selection
+            // Pin path.txt to the video so selection sticks, then start mpvpaper
             persistCurrentPath(path);
-            Quickshell.execDetached(["video-wallpaper", path]);
+            Quickshell.execDetached(["sh", "-c", `${pathExport}; ${vw} ${pathQ}`]);
             return;
         }
-        // Switching back to a still image — stop any video wall first
-        Quickshell.execDetached(["sh", "-c", `video-wallpaper stop-soft 2>/dev/null; caelestia wallpaper -f ${JSON.stringify(path)} ${smartArg.join(" ")}`]);
+
+        // Full stop --no-restore (not stop-soft): re-enables wallpaperEnabled so stills paint.
+        // stop-soft left wallpaperEnabled=false after video → "selected but blank desktop".
+        Quickshell.execDetached(["sh", "-c", `${pathExport}; ${vw} stop --no-restore 2>/dev/null; ${ca} wallpaper -f ${pathQ} ${smart}`]);
     }
 
     function preview(path: string): void {
