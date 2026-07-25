@@ -1,0 +1,935 @@
+diff --git a/modules/Shortcuts.qml b/modules/Shortcuts.qml
+index 4231a262..bd35f111 100644
+--- a/modules/Shortcuts.qml
++++ b/modules/Shortcuts.qml
+@@ -20,6 +20,14 @@ Scope {
+         onPressed: WindowFactory.create()
+     }
+ 
++    // qmllint disable unresolved-type
++    CustomShortcut {
++        // qmllint enable unresolved-type
++        name: "keybinds"
++        description: "Open keyboard shortcuts cheat sheet"
++        onPressed: WindowFactory.openPage("keybinds")
++    }
++
+     // qmllint disable unresolved-type
+     CustomShortcut {
+         // qmllint enable unresolved-type
+@@ -140,6 +148,14 @@ Scope {
+             WindowFactory.create();
+         }
+ 
++        function openPage(pageId: string): void {
++            WindowFactory.openPage(pageId);
++        }
++
++        function keybinds(): void {
++            WindowFactory.openPage("keybinds");
++        }
++
+         target: "nexus"
+     }
+ 
+diff --git a/modules/dashboard/Content.qml b/modules/dashboard/Content.qml
+index 16dcaa13..1c6b3523 100644
+--- a/modules/dashboard/Content.qml
++++ b/modules/dashboard/Content.qml
+@@ -40,6 +40,12 @@ Item {
+                 iconName: "cloud",
+                 text: qsTr("Weather"),
+                 enabled: Config.dashboard.showWeather
++            },
++            {
++                component: notificationsComponent,
++                iconName: "notifications",
++                text: qsTr("Notifications"),
++                enabled: true
+             }
+         ];
+         return allTabs.filter(tab => tab.enabled);
+@@ -181,6 +187,14 @@ Item {
+                 WeatherTab {}
+             }
+ 
++            Component {
++                id: notificationsComponent
++
++                NotificationsTab {
++                    screenState: root.screenState
++                }
++            }
++
+             Behavior on contentX {
+                 Anim {}
+             }
+diff --git a/modules/launcher/ContentList.qml b/modules/launcher/ContentList.qml
+index d4c047eb..e212fcfa 100644
+--- a/modules/launcher/ContentList.qml
++++ b/modules/launcher/ContentList.qml
+@@ -18,7 +18,13 @@ Item {
+     required property int padding
+     required property int rounding
+ 
+-    readonly property bool showWallpapers: search.text.startsWith(`${GlobalConfig.launcher.actionPrefix}wallpaper `)
++    // Super → type ">wallpaper" or ">wallpaper list" / ">wallpaper rain" etc.
++    // Note: QML QString wrappers may not have trimStart(); use replace instead.
++    readonly property bool showWallpapers: {
++        const p = GlobalConfig.launcher.actionPrefix;
++        const t = String(search.text ?? "").replace(/^\s+/, "");
++        return t === `${p}wallpaper` || t.startsWith(`${p}wallpaper `) || t.startsWith(`${p}wallpaper\t`);
++    }
+     readonly property var currentList: showWallpapers ? wallpaperList.item : appList.item // Can be either ListView or PathView, so can't type properly
+     property string animState: showWallpapers ? "wallpapers" : "apps"
+ 
+diff --git a/modules/launcher/WallpaperList.qml b/modules/launcher/WallpaperList.qml
+index 7e086bc3..edf84d74 100644
+--- a/modules/launcher/WallpaperList.qml
++++ b/modules/launcher/WallpaperList.qml
+@@ -47,7 +47,18 @@ PathView {
+     model: ScriptModel {
+         id: scriptModel
+ 
+-        readonly property string search: root.search.text.split(" ").slice(1).join(" ")
++        // ">wallpaper", ">wallpaper list", ">wallpaper anime rain" → search terms after the action
++        readonly property string search: {
++            const raw = root.search.text || "";
++            const prefix = GlobalConfig.launcher.actionPrefix + "wallpaper";
++            let rest = raw;
++            if (rest.startsWith(prefix))
++                rest = rest.slice(prefix.length).trim();
++            // optional "list" keyword: ">wallpaper list cyber"
++            if (rest === "list" || rest.startsWith("list "))
++                rest = rest === "list" ? "" : rest.slice(5).trim();
++            return rest;
++        }
+ 
+         values: Wallpapers.query(search)
+         onValuesChanged: root.currentIndex = search ? 0 : values.findIndex(w => w.path === Wallpapers.actualCurrent)
+diff --git a/modules/launcher/items/WallpaperItem.qml b/modules/launcher/items/WallpaperItem.qml
+index 66f6df33..11a108b7 100644
+--- a/modules/launcher/items/WallpaperItem.qml
++++ b/modules/launcher/items/WallpaperItem.qml
+@@ -1,5 +1,6 @@
+ import QtQuick
+ import Quickshell
++import Quickshell.Io
+ import Caelestia.Config
+ import Caelestia.Models
+ import qs.components
+@@ -12,6 +13,8 @@ Item {
+ 
+     required property FileSystemEntry modelData
+     required property ScreenState screenState
++    readonly property bool isVideo: Wallpapers.isVideo(modelData.path)
++    property string thumbPath
+ 
+     scale: 0.5
+     opacity: 0
+@@ -20,6 +23,21 @@ Item {
+     Component.onCompleted: {
+         scale = Qt.binding(() => PathView.isCurrentItem ? 1 : PathView.onPath ? 0.8 : 0);
+         opacity = Qt.binding(() => PathView.onPath ? 1 : 0);
++        if (isVideo) {
++            thumbGen.command = ["sh", "-c", `video-wallpaper thumb ${JSON.stringify(modelData.path)} 2>/dev/null`];
++            thumbGen.running = true;
++        }
++    }
++
++    Process {
++        id: thumbGen
++        stdout: StdioCollector {
++            onStreamFinished: {
++                const t = text.trim();
++                if (t)
++                    root.thumbPath = t;
++            }
++        }
+     }
+ 
+     implicitWidth: image.width + Tokens.padding.medium * 2
+@@ -59,19 +77,42 @@ Item {
+ 
+         MaterialIcon {
+             anchors.centerIn: parent
+-            text: "image"
++            text: root.isVideo ? "movie" : "image"
+             color: Colours.tPalette.m3outline
+             fontStyle: Tokens.font.icon.builders.extraLarge.scale(2).weight(Font.DemiBold).build()
++            visible: root.isVideo ? !root.thumbPath : true
++            z: 0
+         }
+ 
+         CachingImage {
+             anchors.fill: parent
+-            path: root.modelData.path
++            path: root.thumbPath || (root.isVideo ? "" : root.modelData.path)
+             smooth: !root.PathView.view.moving
+             sourceSize: {
+                 const dpr = (QsWindow.window as QsWindow)?.devicePixelRatio ?? 1;
+                 return Qt.size(image.implicitWidth * dpr, image.implicitHeight * dpr);
+             }
++            z: 1
++        }
++
++        // VIDEO badge in launcher carousel
++        StyledRect {
++            anchors.right: parent.right
++            anchors.top: parent.top
++            anchors.margins: Tokens.padding.small
++            visible: root.isVideo
++            implicitWidth: vlab.implicitWidth + Tokens.padding.small * 2
++            implicitHeight: vlab.implicitHeight + 4
++            radius: Tokens.rounding.full
++            color: Colours.palette.m3primary
++
++            StyledText {
++                id: vlab
++                anchors.centerIn: parent
++                text: "VIDEO"
++                color: Colours.palette.m3onPrimary
++                font: Tokens.font.label.builders.small.weight(Font.Bold).build()
++            }
+         }
+     }
+ 
+diff --git a/modules/nexus/PageCompRegistry.qml b/modules/nexus/PageCompRegistry.qml
+index d7d59245..763ae8a7 100644
+--- a/modules/nexus/PageCompRegistry.qml
++++ b/modules/nexus/PageCompRegistry.qml
+@@ -174,6 +174,14 @@ QtObject {
+                 }
+             }
+         },
++        Component {
++            // Keyboard shortcuts
++            StackPage {
++                Component {
++                    KeybindsPage {}
++                }
++            }
++        },
+ 
+         // About
+         Component {
+diff --git a/modules/nexus/PageRegistry.qml b/modules/nexus/PageRegistry.qml
+index 38bd19ef..b688b169 100644
+--- a/modules/nexus/PageRegistry.qml
++++ b/modules/nexus/PageRegistry.qml
+@@ -81,6 +81,13 @@ QtObject {
+             description: qsTr("UI language, weather location, display units"),
+             category: "shell"
+         },
++        {
++            pageId: "keybinds",
++            label: qsTr("Keyboard shortcuts"),
++            icon: "keyboard",
++            description: qsTr("Hyprland & shell keybinds cheat sheet"),
++            category: "shell"
++        },
+ 
+         // About
+         {
+@@ -90,4 +97,12 @@ QtObject {
+             category: "about"
+         },
+     ]
++
++    function indexOfId(pageId: string): int {
++        for (let i = 0; i < pages.length; i++) {
++            if (pages[i].pageId === pageId)
++                return i;
++        }
++        return -1;
++    }
+ }
+diff --git a/modules/nexus/WindowFactory.qml b/modules/nexus/WindowFactory.qml
+index ab26d15f..560dd709 100644
+--- a/modules/nexus/WindowFactory.qml
++++ b/modules/nexus/WindowFactory.qml
+@@ -11,7 +11,14 @@ Singleton {
+     id: root
+ 
+     function create(parent: Item, props: var): void {
+-        nexusComp.createObject(parent ?? dummy, props);
++        nexusComp.createObject(parent ?? dummy, props ?? {});
++    }
++
++    function openPage(pageId: string): void {
++        const idx = PageRegistry.indexOfId(pageId);
++        create(null, {
++            initialPageIdx: idx >= 0 ? idx : 0
++        });
+     }
+ 
+     QtObject {
+@@ -24,6 +31,8 @@ Singleton {
+         FloatingWindow {
+             id: win
+ 
++            property int initialPageIdx: 0
++
+             color: Colours.tPalette.m3surface
+             surfaceFormat.opaque: false
+ 
+@@ -49,6 +58,7 @@ Singleton {
+                 anchors.fill: parent
+                 nState.screen: win.screen
+                 nState.isWindow: true
++                nState.currentPageIdx: win.initialPageIdx
+                 onClose: win.destroy()
+             }
+ 
+diff --git a/modules/nexus/common/WallItem.qml b/modules/nexus/common/WallItem.qml
+index 39dd22e3..70eba373 100644
+--- a/modules/nexus/common/WallItem.qml
++++ b/modules/nexus/common/WallItem.qml
+@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
+ import QtQuick
+ import QtQuick.Layouts
+ import Quickshell
++import Quickshell.Io
+ import Caelestia.Config
+ import qs.components
+ import qs.components.controls
+@@ -11,17 +12,57 @@ import qs.services
+ Item {
+     id: root
+ 
+-    property alias source: img.source
++    property string source
+     property alias text: label.text
+     property alias radius: imgWrapper.radius
+     property alias imgHeight: imgWrapper.implicitHeight
+     property bool fillLabel: true
++    readonly property bool isVideo: {
++        const s = (source || "").toLowerCase();
++        return [".mp4", ".webm", ".mkv", ".mov", ".avi", ".m4v"].some(ext => s.endsWith(ext));
++    }
+ 
+     signal clicked
+ 
+     Layout.fillWidth: true
+     implicitHeight: layout.implicitHeight
+ 
++    function toUrl(path: string): string {
++        if (!path)
++            return "";
++        if (path.startsWith("file:") || path.startsWith("http:") || path.startsWith("https:"))
++            return path;
++        return "file://" + path;
++    }
++
++    function loadSource(): void {
++        if (!source) {
++            img.source = "";
++            return;
++        }
++        if (isVideo) {
++            thumbProc.command = ["sh", "-c", `video-wallpaper thumb ${JSON.stringify(source)} 2>/dev/null`];
++            thumbProc.running = true;
++        } else {
++            img.source = toUrl(source);
++        }
++    }
++
++    onSourceChanged: loadSource()
++    Component.onCompleted: loadSource()
++
++    Process {
++        id: thumbProc
++
++        stdout: StdioCollector {
++            onStreamFinished: {
++                const t = text.trim();
++                if (t)
++                    img.source = root.toUrl(t);
++            }
++        }
++    }
++
+     ColumnLayout {
+         id: layout
+ 
+@@ -56,6 +97,15 @@ Item {
+                         containsIcon: true
+                         implicitSize: Math.min(imgWrapper.width, imgWrapper.height) * 0.3
+                     }
++
++                    // Video placeholder icon when no thumb yet
++                    MaterialIcon {
++                        anchors.centerIn: parent
++                        visible: root.isVideo && img.status !== Image.Ready
++                        text: "movie"
++                        color: Colours.palette.m3onPrimaryContainer
++                        fontStyle: Tokens.font.icon.builders.extraLarge.scale(1.4).build()
++                    }
+                 }
+ 
+                 Behavior on opacity {
+@@ -84,6 +134,36 @@ Item {
+                     }
+                 }
+             }
++
++            // Video badge
++            StyledRect {
++                anchors.right: parent.right
++                anchors.top: parent.top
++                anchors.margins: Tokens.padding.small
++                visible: root.isVideo
++                implicitWidth: videoBadge.implicitWidth + Tokens.padding.small * 2
++                implicitHeight: videoBadge.implicitHeight + Tokens.padding.extraSmall
++                radius: Tokens.rounding.full
++                color: Colours.palette.m3primary
++
++                RowLayout {
++                    id: videoBadge
++                    anchors.centerIn: parent
++                    spacing: 2
++
++                    MaterialIcon {
++                        text: "play_arrow"
++                        color: Colours.palette.m3onPrimary
++                        fontStyle: Tokens.font.icon.builders.small.scale(0.9).build()
++                    }
++
++                    StyledText {
++                        text: "VIDEO"
++                        color: Colours.palette.m3onPrimary
++                        font: Tokens.font.label.builders.small.weight(Font.Bold).build()
++                    }
++                }
++            }
+         }
+ 
+         StyledText {
+diff --git a/modules/nexus/pages/panels/DashboardPanel.qml b/modules/nexus/pages/panels/DashboardPanel.qml
+index e168f124..2b43332c 100644
+--- a/modules/nexus/pages/panels/DashboardPanel.qml
++++ b/modules/nexus/pages/panels/DashboardPanel.qml
+@@ -63,12 +63,23 @@ PageBase {
+         }
+ 
+         ToggleRow {
+-            last: true
+             text: qsTr("Weather")
+             checked: Config.dashboard.showWeather
+             onToggled: GlobalConfig.dashboard.showWeather = checked
+         }
+ 
++        ToggleRow {
++            last: true
++            text: qsTr("Notifications")
++            subtext: qsTr("Dashboard tab for notification history")
++            checked: Config.dashboard.showNotifications !== false
++            onToggled: {
++                try {
++                    GlobalConfig.dashboard.showNotifications = checked;
++                } catch (e) {}
++            }
++        }
++
+         // Performance widgets
+         SectionHeader {
+             text: qsTr("Performance widgets")
+diff --git a/modules/nexus/pages/wallandstyle/WallpaperSelect.qml b/modules/nexus/pages/wallandstyle/WallpaperSelect.qml
+index 03b29505..afedfa3b 100644
+--- a/modules/nexus/pages/wallandstyle/WallpaperSelect.qml
++++ b/modules/nexus/pages/wallandstyle/WallpaperSelect.qml
+@@ -43,9 +43,9 @@ PageBase {
+                 FileDialog {
+                     id: browseDialog
+ 
+-                    title: qsTr("Select an image")
+-                    filterLabel: qsTr("Image files")
+-                    filters: Images.validImageExtensions
++                    title: qsTr("Select a wallpaper")
++                    filterLabel: qsTr("Images & videos")
++                    filters: Images.validWallpaperExtensions
+                     onAccepted: path => {
+                         Wallpapers.setWallpaper(path);
+                         root.nState.closeSubPage();
+diff --git a/plugin/src/Caelestia/Config/dashboardconfig.hpp b/plugin/src/Caelestia/Config/dashboardconfig.hpp
+index cb872d1d..2aacca29 100644
+--- a/plugin/src/Caelestia/Config/dashboardconfig.hpp
++++ b/plugin/src/Caelestia/Config/dashboardconfig.hpp
+@@ -30,6 +30,7 @@ class DashboardConfig : public ConfigObject {
+     CONFIG_PROPERTY(bool, showMedia, true)
+     CONFIG_PROPERTY(bool, showPerformance, true)
+     CONFIG_PROPERTY(bool, showWeather, true)
++    CONFIG_PROPERTY(bool, showNotifications, true)
+     CONFIG_GLOBAL_PROPERTY(int, mediaUpdateInterval, 500)
+     CONFIG_GLOBAL_PROPERTY(int, resourceUpdateInterval, 1000)
+     CONFIG_PROPERTY(int, dragThreshold, 50)
+diff --git a/services/NotifData.qml b/services/NotifData.qml
+index 8e980f18..548f8b00 100644
+--- a/services/NotifData.qml
++++ b/services/NotifData.qml
+@@ -49,11 +49,19 @@ QtObject {
+         return monitor?.activeWorkspace?.toplevels.values.some(t => t.lastIpcObject.fullscreen > 1) ?? false;
+     }
+ 
++    // Popup toast timer only — never deletes the notification from the panel.
+     readonly property Timer timer: Timer {
+-        running: true
+-        interval: notif.expireTimeout > 0 ? notif.expireTimeout : notif.hasFullscreen ? GlobalConfig.notifs.fullscreenExpireTimeout : GlobalConfig.notifs.defaultExpireTimeout
++        running: notif.popup
++        interval: {
++            // Prefer shell config; ignore tiny app timeouts that make toasts flash away
++            const app = notif.expireTimeout;
++            const def = notif.hasFullscreen ? GlobalConfig.notifs.fullscreenExpireTimeout : GlobalConfig.notifs.defaultExpireTimeout;
++            if (app > 0 && app >= 2000)
++                return Math.max(app, def);
++            return def;
++        }
+         onTriggered: {
+-            // Always expire if the active workspace has a fullscreen window
++            // Always hide popup on fullscreen; otherwise respect expire setting
+             if (GlobalConfig.notifs.expire || notif.hasFullscreen)
+                 notif.popup = false;
+         }
+@@ -110,48 +118,64 @@ QtObject {
+     }
+ 
+     readonly property Connections conn: Connections {
++        // App/server closed the live notification (timeout, replace, etc.).
++        // Keep the entry in the notification panel — only clear the popup.
++        // User dismisses from the panel (or Super+clear) still calls close().
+         function onClosed(): void {
+-            notif.close();
++            notif.popup = false;
++            notif.notification = null;
+         }
+ 
+         function onSummaryChanged(): void {
+-            notif.summary = notif.notification.summary;
++            if (notif.notification)
++                notif.summary = notif.notification.summary;
+         }
+ 
+         function onBodyChanged(): void {
+-            notif.body = notif.notification.body;
++            if (notif.notification)
++                notif.body = notif.notification.body;
+         }
+ 
+         function onAppIconChanged(): void {
+-            notif.appIcon = notif.notification.appIcon;
++            if (notif.notification)
++                notif.appIcon = notif.notification.appIcon;
+         }
+ 
+         function onAppNameChanged(): void {
+-            notif.appName = notif.notification.appName;
++            if (notif.notification)
++                notif.appName = notif.notification.appName;
+         }
+ 
+         function onImageChanged(): void {
+-            notif.image = notif.notification.image;
+-            notif.maybeTriggerDummyImageLoader();
++            if (notif.notification) {
++                notif.image = notif.notification.image;
++                notif.maybeTriggerDummyImageLoader();
++            }
+         }
+ 
+         function onExpireTimeoutChanged(): void {
+-            notif.expireTimeout = notif.notification.expireTimeout;
++            // Keep our popup timer independent of the app's protocol timeout
++            // (apps often send short expire values that should not wipe history).
+         }
+ 
+         function onUrgencyChanged(): void {
+-            notif.urgency = notif.notification.urgency;
++            if (notif.notification)
++                notif.urgency = notif.notification.urgency;
+         }
+ 
+         function onResidentChanged(): void {
+-            notif.resident = notif.notification.resident;
++            if (notif.notification)
++                notif.resident = notif.notification.resident;
+         }
+ 
+         function onHasActionIconsChanged(): void {
+-            notif.hasActionIcons = notif.notification.hasActionIcons;
++            if (notif.notification)
++                notif.hasActionIcons = notif.notification.hasActionIcons;
+         }
+ 
+         function onActionsChanged(): void {
++            if (!notif.notification)
++                return;
+             // qmllint disable unresolved-type
+             notif.actions = notif.notification.actions.map(a => ({
+                         // qmllint enable unresolved-type
+@@ -162,7 +186,8 @@ QtObject {
+         }
+ 
+         function onHintsChanged(): void {
+-            notif.hints = notif.notification.hints;
++            if (notif.notification)
++                notif.hints = notif.notification.hints;
+         }
+ 
+         target: notif.notification
+@@ -227,7 +252,9 @@ QtObject {
+         appName = notification.appName;
+         image = notification.image;
+         maybeTriggerDummyImageLoader();
+-        expireTimeout = notification.expireTimeout;
++        // Prefer shell default for popup duration when app sends no/short timeout
++        const appTimeout = notification.expireTimeout;
++        expireTimeout = (appTimeout && appTimeout >= 2000) ? appTimeout : GlobalConfig.notifs.defaultExpireTimeout;
+         hints = notification.hints;
+         urgency = notification.urgency;
+         resident = notification.resident;
+diff --git a/services/Notifs.qml b/services/Notifs.qml
+index 246c9e34..fa9d1678 100644
+--- a/services/Notifs.qml
++++ b/services/Notifs.qml
+@@ -15,11 +15,13 @@ Singleton {
+     id: root
+ 
+     property list<NotifData> list: []
+-    readonly property list<NotifData> notClosed: list.filter(n => !n.closed)
+-    readonly property list<NotifData> popups: list.filter(n => n.popup)
++    readonly property list<NotifData> notClosed: list.filter(n => n && !n.closed)
++    readonly property list<NotifData> popups: list.filter(n => n && n.popup)
+     property alias dnd: props.dnd
+ 
+     property bool loaded
++    // Cap saved/history notifications (newest first)
++    readonly property int maxHistory: 80
+ 
+     function hasFullscreen(): bool {
+         for (const monitor of Hypr.monitors.values) {
+@@ -37,6 +39,18 @@ Singleton {
+         return true;
+     }
+ 
++    function trimHistory(): void {
++        const open = list.filter(n => n && !n.closed);
++        if (open.length <= maxHistory)
++            return;
++        // list is newest-first; drop oldest beyond the cap
++        const drop = open.slice(maxHistory);
++        for (const n of drop) {
++            if (n && !n.closed)
++                n.close();
++        }
++    }
++
+     onDndChanged: {
+         if (!GlobalConfig.utilities.toasts.dndChanged)
+             return;
+@@ -56,20 +70,27 @@ Singleton {
+         id: saveTimer
+ 
+         interval: 1000
+-        onTriggered: storage.setText(JSON.stringify(root.notClosed.map(n => ({
+-                    time: n.time,
+-                    id: n.id,
+-                    summary: n.summary,
+-                    body: n.body,
+-                    appIcon: n.appIcon,
+-                    appName: n.appName,
+-                    image: n.image,
+-                    expireTimeout: n.expireTimeout,
+-                    urgency: n.urgency,
+-                    resident: n.resident,
+-                    hasActionIcons: n.hasActionIcons,
+-                    actions: n.actions
+-                }))))
++        onTriggered: {
++            root.trimHistory();
++            const items = root.notClosed.slice(0, root.maxHistory).map(n => ({
++                        time: n.time,
++                        id: n.notificationId,
++                        summary: n.summary,
++                        body: n.body,
++                        appIcon: n.appIcon,
++                        appName: n.appName,
++                        image: n.image,
++                        expireTimeout: n.expireTimeout,
++                        urgency: n.urgency,
++                        resident: n.resident,
++                        hasActionIcons: n.hasActionIcons,
++                        actions: (n.actions || []).map(a => ({
++                                    identifier: a.identifier,
++                                    text: a.text
++                                }))
++                    }));
++            storage.setText(JSON.stringify(items));
++        }
+     }
+ 
+     PersistentProperties {
+@@ -108,18 +129,36 @@ Singleton {
+         printErrors: false
+         path: `${Paths.state}/notifs.json`
+         onLoaded: {
+-            const data = JSON.parse(text());
+-            for (const notif of data) {
+-                const properties = Object.assign({}, notif);
+-
+-                // Backwards compatibility for old notifications
+-                if (properties.notificationId === undefined && properties.id !== undefined)
+-                    properties.notificationId = properties.id;
+-
+-                delete properties.id;
+-                root.list.push(notifComp.createObject(root, properties));
++            try {
++                const data = JSON.parse(text() || "[]");
++                // Load newest first, cap history
++                const slice = Array.isArray(data) ? data.slice(0, root.maxHistory) : [];
++                const created = [];
++                for (const notif of slice) {
++                    const properties = Object.assign({}, notif);
++
++                    // Backwards compatibility for old notifications
++                    if (properties.notificationId === undefined && properties.id !== undefined)
++                        properties.notificationId = properties.id;
++
++                    delete properties.id;
++                    // Stored actions can't re-invoke after restart
++                    if (properties.actions)
++                        properties.actions = (properties.actions || []).map(a => ({
++                                    identifier: a.identifier,
++                                    text: a.text,
++                                    invoke: () => {}
++                                }));
++                    const obj = notifComp.createObject(root, properties);
++                    if (obj)
++                        created.push(obj);
++                }
++                created.sort((a, b) => b.time - a.time);
++                root.list = created;
++            } catch (e) {
++                console.warn("Failed to load notification history:", e);
++                root.list = [];
+             }
+-            root.list.sort((a, b) => b.time - a.time);
+             root.loaded = true;
+         }
+         onLoadFailed: err => {
+diff --git a/services/Wallpapers.qml b/services/Wallpapers.qml
+index 916fc953..b7bc6ae6 100644
+--- a/services/Wallpapers.qml
++++ b/services/Wallpapers.qml
+@@ -22,23 +22,73 @@ Searcher {
+     property bool previewColourLock
+     property bool pendingPreviewClear
+ 
++    readonly property list<string> videoExts: ["mp4", "webm", "mkv", "mov", "avi", "m4v"]
++    readonly property string videoThumbDir: `${Paths.cache}/video-thumbs`
++    // Merged stills + videos for launcher (>wallpaper) and Nexus
++    property list<var> combinedList: []
++
+     function getCategoryFor(w: FileSystemEntry): string {
++        const path = w.path || "";
++        // Videos live under ~/Videos/VideoWallpapers/<category>/...
++        if (path.startsWith(Paths.videowallsdir + "/") || path.startsWith(Paths.videowallsdir)) {
++            let category = w.parentDir.slice(Paths.videowallsdir.length + 1);
++            if (!category)
++                return "Videos";
++            if (category.includes("/"))
++                category = category.slice(0, category.indexOf("/"));
++            return category || "Videos";
++        }
+         let category = w.parentDir.slice(Paths.wallsdir.length + 1);
+         if (category.includes("/"))
+             category = category.slice(0, category.indexOf("/"));
+         return category;
+     }
+ 
++    function isVideo(path: string): bool {
++        const p = (path || "").toLowerCase();
++        return videoExts.some(ext => p.endsWith(`.${ext}`));
++    }
++
++    function rebuildCombinedList(): void {
++        const out = [];
++        const seen = {};
++        for (const e of stillWallpapers.entries) {
++            if (e?.path && !seen[e.path]) {
++                seen[e.path] = true;
++                out.push(e);
++            }
++        }
++        for (const e of videoWallpapers.entries) {
++            if (e?.path && !seen[e.path]) {
++                seen[e.path] = true;
++                out.push(e);
++            }
++        }
++        combinedList = out;
++    }
++
+     function setRandom(): void {
+-        Quickshell.execDetached(["caelestia", "wallpaper", "-r", ...smartArg]);
++        // Prefer still images for random — video walls are intentional
++        Quickshell.execDetached(["sh", "-c", "video-wallpaper stop-soft 2>/dev/null; caelestia wallpaper -r " + smartArg.join(" ")]);
+     }
+ 
+     function setWallpaper(path: string): void {
+         actualCurrent = path;
+-        Quickshell.execDetached(["caelestia", "wallpaper", "-f", path, ...smartArg]);
++        if (isVideo(path)) {
++            Quickshell.execDetached(["video-wallpaper", path]);
++            return;
++        }
++        // Switching back to a still image — stop any video wall first
++        Quickshell.execDetached(["sh", "-c", `video-wallpaper stop-soft 2>/dev/null; caelestia wallpaper -f ${JSON.stringify(path)} ${smartArg.join(" ")}`]);
+     }
+ 
+     function preview(path: string): void {
++        // Videos: generate a frame thumb then preview colours from it
++        if (isVideo(path)) {
++            previewVideoProc.command = ["sh", "-c", `t=$(video-wallpaper thumb ${JSON.stringify(path)} 2>/dev/null) && echo "$t"`];
++            previewVideoProc.running = true;
++            return;
++        }
+         previewPath = path;
+         showPreview = true;
+ 
+@@ -59,7 +109,7 @@ Searcher {
+             Colours.showPreview = false;
+     }
+ 
+-    list: wallpapers.entries
++    list: combinedList
+     key: "relativePath"
+     useFuzzy: GlobalConfig.launcher.useFuzzy.wallpapers
+     extraOpts: useFuzzy ? ({}) : ({
+@@ -76,7 +126,7 @@ Searcher {
+         }
+ 
+         function list(): string {
+-            return root.list.map(w => w.path).join("\n");
++            return root.combinedList.map(w => w.path).join("\n");
+         }
+ 
+         target: "wallpaper"
+@@ -103,14 +153,30 @@ Searcher {
+         }
+     }
+ 
++    // Still images (+ any videos physically under Wallpapers, not via symlink)
+     FileSystemModel {
+-        id: wallpapers
++        id: stillWallpapers
+ 
+         recursive: true
+         path: Paths.wallsdir
+-        filter: FileSystemModel.Images
++        filter: FileSystemModel.Files
++        nameFilters: ["*.jpg", "*.jpeg", "*.png", "*.webp", "*.tif", "*.tiff", "*.svg", "*.gif", "*.mp4", "*.webm", "*.mkv", "*.mov", "*.avi", "*.m4v", "*.JPG", "*.JPEG", "*.PNG", "*.WEBP", "*.MP4", "*.WEBM", "*.MKV"]
++        onEntriesChanged: root.rebuildCombinedList()
++    }
++
++    // Live video walls — separate tree (QDirIterator skips dir symlinks)
++    FileSystemModel {
++        id: videoWallpapers
++
++        recursive: true
++        path: Paths.videowallsdir
++        filter: FileSystemModel.Files
++        nameFilters: ["*.mp4", "*.webm", "*.mkv", "*.mov", "*.avi", "*.m4v", "*.MP4", "*.WEBM", "*.MKV", "*.MOV", "*.AVI", "*.M4V"]
++        onEntriesChanged: root.rebuildCombinedList()
+     }
+ 
++    Component.onCompleted: rebuildCombinedList()
++
+     Process {
+         id: getPreviewColoursProc
+ 
+@@ -122,4 +188,20 @@ Searcher {
+             }
+         }
+     }
++
++    Process {
++        id: previewVideoProc
++
++        stdout: StdioCollector {
++            onStreamFinished: {
++                const t = text.trim();
++                if (!t)
++                    return;
++                root.previewPath = t;
++                root.showPreview = true;
++                if (Colours.scheme === "dynamic")
++                    getPreviewColoursProc.running = true;
++            }
++        }
++    }
+ }
+diff --git a/shell.qml b/shell.qml
+index 85c35998..254121d3 100644
+--- a/shell.qml
++++ b/shell.qml
+@@ -1,8 +1,8 @@
+ //@ pragma Env QS_CRASHREPORT_URL=https://github.com/caelestia-dots/shell/issues/new?template=crash.yml
+-//@ pragma DefaultEnv QS_NO_RELOAD_POPUP=1
+-//@ pragma DefaultEnv QS_DROP_EXPENSIVE_FONTS=1
+-//@ pragma DefaultEnv QSG_RENDER_LOOP=threaded
+-//@ pragma DefaultEnv QT_QUICK_FLICKABLE_WHEEL_DECELERATION=10000
++//@ pragma Env QS_NO_RELOAD_POPUP=1
++//@ pragma Env QS_DROP_EXPENSIVE_FONTS=1
++//@ pragma Env QSG_RENDER_LOOP=threaded
++//@ pragma Env QT_QUICK_FLICKABLE_WHEEL_DECELERATION=10000
+ 
+ import "modules"
+ import "modules/drawers"
+@@ -16,7 +16,7 @@ import qs.services
+ ShellRoot {
+     id: root
+ 
+-    settings.watchFiles: true
++    settings.watchFiles: false
+ 
+     Binding {
+         target: ShellState
+diff --git a/utils/Images.qml b/utils/Images.qml
+index ac76f511..ddfd6109 100644
+--- a/utils/Images.qml
++++ b/utils/Images.qml
+@@ -5,8 +5,20 @@ import Quickshell
+ Singleton {
+     readonly property list<string> validImageTypes: ["jpeg", "png", "webp", "tiff", "svg"]
+     readonly property list<string> validImageExtensions: ["jpg", "jpeg", "png", "webp", "tif", "tiff", "svg"]
++    readonly property list<string> validVideoExtensions: ["mp4", "webm", "mkv", "mov", "avi", "m4v"]
++    readonly property list<string> validWallpaperExtensions: [...validImageExtensions, ...validVideoExtensions]
+ 
+     function isValidImageByName(name: string): bool {
+-        return validImageExtensions.some(t => name.endsWith(`.${t}`));
++        const n = name.toLowerCase();
++        return validImageExtensions.some(t => n.endsWith(`.${t}`));
++    }
++
++    function isVideoByName(name: string): bool {
++        const n = name.toLowerCase();
++        return validVideoExtensions.some(t => n.endsWith(`.${t}`));
++    }
++
++    function isWallpaperByName(name: string): bool {
++        return isValidImageByName(name) || isVideoByName(name);
+     }
+ }
+diff --git a/utils/Paths.qml b/utils/Paths.qml
+index 97f6448a..ccef0fbd 100644
+--- a/utils/Paths.qml
++++ b/utils/Paths.qml
+@@ -20,6 +20,8 @@ Singleton {
+     readonly property string imagecache: `${cache}/imagecache`
+     readonly property string notifimagecache: `${imagecache}/notifs`
+     readonly property string wallsdir: Quickshell.env("CAELESTIA_WALLPAPERS_DIR") || absolutePath(GlobalConfig.paths.wallpaperDir)
++    // Live/video walls (mpvpaper). Scanned separately because QDirIterator does not follow dir symlinks.
++    readonly property string videowallsdir: Quickshell.env("CAELESTIA_VIDEO_WALLS_DIR") || `${videos}/VideoWallpapers`
+     readonly property string recsdir: Quickshell.env("CAELESTIA_RECORDINGS_DIR") || `${videos}/Recordings`
+     readonly property string libdir: Quickshell.env("CAELESTIA_LIB_DIR") || "/usr/lib/caelestia"
+ 

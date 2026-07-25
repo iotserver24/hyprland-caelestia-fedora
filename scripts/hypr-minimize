@@ -1,0 +1,254 @@
+#!/usr/bin/env bash
+# hypr-minimize — make minimize actually work on Hyprland
+#
+# Hyprland has no real minimize. We park windows on special:minimized.
+# Usage:
+#   hypr-minimize              # minimize focused window
+#   hypr-minimize <address>    # minimize window by address (0x… or bare hex)
+#   hypr-minimize restore [addr]
+#   hypr-minimize toggle       # minimize focused, or restore if already min
+#   hypr-minimize show         # toggle special:minimized workspace view
+#   hypr-minimize list
+#   hypr-minimize daemon       # handle titlebar/taskbar minimize IPC events
+set -euo pipefail
+
+export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:$PATH"
+
+SPECIAL="special:minimized"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/hypr-minimize"
+MAP_FILE="$STATE_DIR/origins.json" # address -> original workspace name
+PID_FILE="$STATE_DIR/daemon.pid"
+
+mkdir -p "$STATE_DIR"
+[[ -f "$MAP_FILE" ]] || echo '{}' >"$MAP_FILE"
+
+his() {
+  if [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]]; then
+    echo "$HYPRLAND_INSTANCE_SIGNATURE"
+    return
+  fi
+  ls /run/user/"$UID"/hypr 2>/dev/null | head -1
+}
+
+normalize_addr() {
+  local a="${1:-}"
+  a="${a#address:}"
+  a="${a#0x}"
+  a="${a,,}"
+  echo "0x$a"
+}
+
+json_get() {
+  python3 - "$MAP_FILE" "$1" <<'PY'
+import json,sys
+from pathlib import Path
+p=Path(sys.argv[1]); k=sys.argv[2].lower().replace("0x","")
+data=json.loads(p.read_text() or "{}")
+print(data.get(k) or data.get("0x"+k) or "")
+PY
+}
+
+json_set() {
+  python3 - "$MAP_FILE" "$1" "$2" <<'PY'
+import json,sys
+from pathlib import Path
+p=Path(sys.argv[1]); k=sys.argv[2].lower().replace("0x",""); v=sys.argv[3]
+data=json.loads(p.read_text() or "{}") if p.exists() else {}
+data[k]=v
+p.write_text(json.dumps(data))
+PY
+}
+
+json_del() {
+  python3 - "$MAP_FILE" "$1" <<'PY'
+import json,sys
+from pathlib import Path
+p=Path(sys.argv[1]); k=sys.argv[2].lower().replace("0x","")
+data=json.loads(p.read_text() or "{}") if p.exists() else {}
+data.pop(k, None); data.pop("0x"+k, None)
+p.write_text(json.dumps(data))
+PY
+}
+
+active_addr() {
+  hyprctl activewindow -j 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin).get("address",""))' 2>/dev/null || true
+}
+
+win_workspace() {
+  local addr
+  addr=$(normalize_addr "$1")
+  hyprctl clients -j 2>/dev/null | python3 -c '
+import sys,json
+addr=sys.argv[1].lower()
+for c in json.load(sys.stdin):
+    a=c.get("address","").lower()
+    if a==addr or a==addr.replace("0x","") or ("0x"+a.replace("0x",""))==addr:
+        ws=c.get("workspace") or {}
+        print(ws.get("name") or ws.get("id") or "")
+        break
+' "$addr" 2>/dev/null || true
+}
+
+is_minimized_ws() {
+  local ws="${1:-}"
+  [[ "$ws" == "special:minimized" || "$ws" == "minimized" ]]
+}
+
+# Hyprland 0.56+ Lua config: classic "dispatch movetoworkspacesilent …" is unreliable.
+# Use hl.dsp.window.move via hyprctl dispatch/eval instead.
+hl_move() {
+  local ws="$1" addr="$2" follow="${3:-false}"
+  hyprctl dispatch "hl.dsp.window.move({ workspace = \"$ws\", follow = $follow, window = \"address:$addr\" })" >/dev/null 2>&1 \
+    || hyprctl eval "hl.dispatch(hl.dsp.window.move({ workspace = \"$ws\", follow = $follow, window = \"address:$addr\" }))" >/dev/null 2>&1
+}
+
+minimize_addr() {
+  local addr ws
+  addr=$(normalize_addr "$1")
+  ws=$(win_workspace "$addr")
+  [[ -n "$ws" ]] || { echo "Window not found: $addr" >&2; return 1; }
+  if is_minimized_ws "$ws"; then
+    echo "Already minimized: $addr"
+    return 0
+  fi
+  json_set "$addr" "$ws"
+  # silent so we don't jump to the special workspace
+  hl_move "$SPECIAL" "$addr" false
+  echo "Minimized $addr (from $ws)"
+}
+
+restore_addr() {
+  local addr origin
+  addr=$(normalize_addr "$1")
+  origin=$(json_get "$addr")
+  if [[ -z "$origin" ]]; then
+    origin=$(hyprctl activeworkspace -j 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin).get("name",""))' 2>/dev/null || echo "1")
+  fi
+  # If origin was special, fall back to current
+  if is_minimized_ws "$origin" || [[ -z "$origin" ]]; then
+    origin=$(hyprctl activeworkspace -j 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin).get("name","1"))')
+  fi
+  hl_move "$origin" "$addr" true
+  json_del "$addr"
+  echo "Restored $addr → $origin"
+}
+
+minimize_active() {
+  local addr
+  addr=$(active_addr)
+  [[ -n "$addr" && "$addr" != "0x0" && "$addr" != "0x" ]] || { echo "No active window" >&2; return 1; }
+  minimize_addr "$addr"
+}
+
+restore_active_or_last() {
+  local addr ws
+  addr=$(active_addr)
+  if [[ -n "$addr" ]]; then
+    ws=$(win_workspace "$addr")
+    if is_minimized_ws "$ws"; then
+      restore_addr "$addr"
+      return
+    fi
+  fi
+  # restore first minimized window
+  local first
+  first=$(hyprctl clients -j 2>/dev/null | python3 -c '
+import sys,json
+for c in json.load(sys.stdin):
+    ws=(c.get("workspace") or {}).get("name","")
+    if ws=="special:minimized" or ws=="minimized":
+        print(c.get("address","")); break
+' 2>/dev/null || true)
+  if [[ -n "$first" ]]; then
+    restore_addr "$first"
+  else
+    echo "No minimized windows"
+  fi
+}
+
+toggle_active() {
+  local addr ws
+  addr=$(active_addr)
+  [[ -n "$addr" && "$addr" != "0x0" ]] || { echo "No active window" >&2; return 1; }
+  ws=$(win_workspace "$addr")
+  if is_minimized_ws "$ws"; then
+    restore_addr "$addr"
+  else
+    minimize_addr "$addr"
+  fi
+}
+
+show_special() {
+  hyprctl dispatch 'hl.dsp.workspace.toggle_special("minimized")' >/dev/null 2>&1 \
+    || hyprctl dispatch togglespecialworkspace minimized >/dev/null 2>&1
+}
+
+list_min() {
+  hyprctl clients -j 2>/dev/null | python3 -c "
+import sys,json
+for c in json.load(sys.stdin):
+    ws=(c.get('workspace') or {}).get('name','')
+    if ws in ('special:minimized','minimized'):
+        print(c.get('address',''), c.get('class',''), (c.get('title') or '')[:60])
+" 2>/dev/null || true
+}
+
+daemon() {
+  # single instance
+  if [[ -f "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+    echo "daemon already running (pid $(cat "$PID_FILE"))"
+    exit 0
+  fi
+  echo $$ >"$PID_FILE"
+  trap 'rm -f "$PID_FILE"' EXIT
+
+  local HIS SOCK
+  HIS=$(his)
+  [[ -n "$HIS" ]] || { echo "Hyprland not running" >&2; exit 1; }
+  SOCK="/run/user/$UID/hypr/$HIS/.socket2.sock"
+  [[ -S "$SOCK" ]] || { echo "No event socket: $SOCK" >&2; exit 1; }
+
+  echo "hypr-minimize daemon on $SOCK"
+
+  # Handle:
+  #  - minimized>>ADDRESS,1  (taskbar / foreign-toplevel request → minimize)
+  #  - minimized>>ADDRESS,0  (unminimize request → restore)
+  #
+  # Note: many CSD titlebar minimize buttons only call xdg set_minimized,
+  # which Hyprland currently ignores (no IPC event). Those still need
+  # Super+Shift+M, or a Hyprland patch. Taskbar minimize works fully.
+  socat -u UNIX-CONNECT:"$SOCK" - | while IFS= read -r line; do
+    case "$line" in
+      minimized\>\>*)
+        local data addr state
+        data="${line#minimized>>}"
+        addr="${data%%,*}"
+        state="${data##*,}"
+        if [[ "$state" == "1" ]]; then
+          minimize_addr "$addr" || true
+        else
+          restore_addr "$addr" || true
+        fi
+        ;;
+    esac
+  done
+}
+
+cmd="${1:-}"
+case "$cmd" in
+  ""|active) minimize_active ;;
+  restore)
+    if [[ -n "${2:-}" ]]; then restore_addr "$2"; else restore_active_or_last; fi
+    ;;
+  toggle) toggle_active ;;
+  show|unhide) show_special ;;
+  list) list_min ;;
+  daemon) daemon ;;
+  help|-h|--help)
+    sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
+    ;;
+  *)
+    # treat as address
+    minimize_addr "$cmd"
+    ;;
+esac

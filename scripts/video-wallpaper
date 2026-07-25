@@ -1,0 +1,263 @@
+#!/usr/bin/env bash
+# video-wallpaper — live video walls via mpvpaper (Caelestia-friendly)
+# Usage: video-wallpaper <file|pick|stop|status|thumb <file>|restore>
+set -euo pipefail
+export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:$PATH"
+
+STATE="${XDG_DATA_HOME:-$HOME/.local/share}/caelestia-video-wall"
+SHELL_JSON="${XDG_CONFIG_HOME:-$HOME/.config}/caelestia/shell.json"
+PATH_FILE="$STATE/current.path"
+PID_DIR="$STATE/pids"
+THUMB_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/caelestia/video-thumbs"
+VIDDIR="${CAELESTIA_VIDEO_WALLS_DIR:-$HOME/Videos/VideoWallpapers}"
+WALL_DIR="${CAELESTIA_WALLPAPERS_DIR:-$HOME/Pictures/Wallpapers}"
+VIDEO_EXTS='mp4|webm|mkv|mov|avi|m4v|gif'
+
+mkdir -p "$STATE" "$PID_DIR" "$THUMB_DIR" "$VIDDIR"
+
+is_video() {
+  local f="${1,,}"
+  [[ "$f" =~ \.($VIDEO_EXTS)$ ]]
+}
+
+set_wallpaper_enabled() {
+  local val="$1" # true|false
+  python3 - "$SHELL_JSON" "$val" <<'PY'
+import json, sys
+from pathlib import Path
+p = Path(sys.argv[1])
+val = sys.argv[2].lower() == "true"
+cfg = {}
+if p.exists() and p.read_text().strip():
+    try:
+        cfg = json.loads(p.read_text())
+    except json.JSONDecodeError:
+        cfg = {}
+cfg.setdefault("background", {})
+cfg["background"]["enabled"] = True
+cfg["background"]["wallpaperEnabled"] = val
+p.parent.mkdir(parents=True, exist_ok=True)
+p.write_text(json.dumps(cfg, indent=4) + "\n")
+print(f"wallpaperEnabled={val}")
+PY
+  # shell.json is hot-reloaded by Caelestia — no shell restart needed
+}
+
+stop_players() {
+  if [[ -d "$PID_DIR" ]]; then
+    for f in "$PID_DIR"/*; do
+      [[ -f "$f" ]] || continue
+      kill "$(cat "$f")" 2>/dev/null || true
+      rm -f "$f"
+    done
+  fi
+  pkill -x mpvpaper 2>/dev/null || true
+}
+
+stop() {
+  local soft="${1:-}"
+  stop_players
+  rm -f "$PATH_FILE"
+  if [[ "$soft" != "soft" ]]; then
+    set_wallpaper_enabled true
+  fi
+}
+
+status() {
+  if pgrep -x mpvpaper >/dev/null 2>&1; then
+    echo "running: $(cat "$PATH_FILE" 2>/dev/null || echo unknown)"
+  else
+    echo "stopped"
+  fi
+}
+
+thumb_path_for() {
+  local VIDEO="$1"
+  local hash
+  hash=$(printf '%s' "$VIDEO" | sha256sum | awk '{print $1}')
+  echo "$THUMB_DIR/$hash.jpg"
+}
+
+make_thumb() {
+  local VIDEO="$1"
+  local out
+  out=$(thumb_path_for "$VIDEO")
+  if [[ -f "$out" && "$out" -nt "$VIDEO" ]]; then
+    echo "$out"
+    return 0
+  fi
+  if ! command -v ffmpeg >/dev/null 2>&1; then
+    return 1
+  fi
+  # Grab a frame ~1s in (or first frame if short)
+  ffmpeg -y -loglevel error -ss 00:00:01 -i "$VIDEO" -frames:v 1 -q:v 3 "$out" 2>/dev/null \
+    || ffmpeg -y -loglevel error -i "$VIDEO" -frames:v 1 -q:v 3 "$out" 2>/dev/null \
+    || return 1
+  echo "$out"
+}
+
+monitors() {
+  if command -v hyprctl >/dev/null 2>&1; then
+    export HYPRLAND_INSTANCE_SIGNATURE="${HYPRLAND_INSTANCE_SIGNATURE:-$(ls /run/user/"$UID"/hypr 2>/dev/null | head -1)}"
+    hyprctl monitors -j 2>/dev/null | python3 -c 'import sys,json
+try:
+  m=json.load(sys.stdin)
+  for x in m: print(x["name"])
+except Exception:
+  pass' 2>/dev/null
+  return 0
+fi
+  echo "eDP-1"
+}
+
+apply_scheme_from_thumb() {
+  local thumb="$1"
+  [[ -f "$thumb" ]] || return 0
+  # Use still image pipeline so colours / path stay consistent
+  if command -v caelestia >/dev/null 2>&1; then
+    caelestia wallpaper -f "$thumb" -N 2>/dev/null || true
+  fi
+}
+
+start_video() {
+  local VIDEO
+  VIDEO=$(readlink -f "$1" 2>/dev/null || realpath "$1" 2>/dev/null || echo "$1")
+  [[ -f "$VIDEO" ]] || { echo "Not a file: $1" >&2; exit 1; }
+  is_video "$VIDEO" || { echo "Not a video: $VIDEO" >&2; exit 1; }
+
+  if ! command -v mpvpaper >/dev/null 2>&1; then
+    echo "mpvpaper is not installed. Install it (e.g. dnf install mpvpaper)." >&2
+    exit 1
+  fi
+
+  printf '%s\n' "$VIDEO" > "$PATH_FILE"
+
+  local thumb=""
+  thumb=$(make_thumb "$VIDEO" || true)
+
+  # Hide still wallpaper layer so the video is visible
+  set_wallpaper_enabled false
+  stop_players
+  sleep 0.15
+
+  local mon count=0
+  while read -r mon; do
+    [[ -n "$mon" ]] || continue
+    mpvpaper -f -p -o "no-audio loop panscan=1.0 hwdec=auto profile=low-latency" "$mon" "$VIDEO" &
+    echo $! > "$PID_DIR/$mon.pid"
+    count=$((count + 1))
+  done < <(monitors)
+
+  if [[ "$count" -eq 0 ]]; then
+    mpvpaper -f -p -o "no-audio loop panscan=1.0 hwdec=auto" "*" "$VIDEO" &
+    echo $! > "$PID_DIR/all.pid"
+  fi
+
+  # Optional colour scheme from a video frame (doesn't re-show still layer)
+  if [[ -n "$thumb" && -f "$thumb" ]]; then
+    # Keep wallpaperEnabled false after scheme apply
+    (
+      apply_scheme_from_thumb "$thumb"
+      set_wallpaper_enabled false
+    ) &
+  fi
+
+  echo "Video wallpaper:"
+  echo "  $VIDEO"
+  [[ -n "$thumb" ]] && echo "  thumb: $thumb"
+}
+
+list_videos() {
+  # Prefer dedicated video dir, also scan Wallpapers for videos
+  find "$VIDDIR" "$WALL_DIR" -type f \( \
+    -iname '*.mp4' -o -iname '*.webm' -o -iname '*.mkv' -o \
+    -iname '*.mov' -o -iname '*.avi' -o -iname '*.m4v' \
+  \) 2>/dev/null | sort -u
+}
+
+pick() {
+  mapfile -t files < <(list_videos)
+  if [[ ${#files[@]} -eq 0 ]]; then
+    echo "No videos found in:" >&2
+    echo "  $VIDDIR" >&2
+    echo "  $WALL_DIR" >&2
+    echo "Drop .mp4/.webm files there, then run again." >&2
+    exit 1
+  fi
+  local choice=""
+  if command -v fuzzel >/dev/null 2>&1; then
+    choice=$(printf '%s\n' "${files[@]}" | fuzzel -d -p "Video wall: ")
+  elif command -v wofi >/dev/null 2>&1; then
+    choice=$(printf '%s\n' "${files[@]}" | wofi -d -p "Video wall")
+  elif command -v rofi >/dev/null 2>&1; then
+    choice=$(printf '%s\n' "${files[@]}" | rofi -dmenu -p "Video wall")
+  else
+    echo "Video wallpapers:"
+    local i=1
+    for f in "${files[@]}"; do
+      printf '  %2d) %s\n' "$i" "$f"
+      i=$((i + 1))
+    done
+    read -r -p "Pick number (or q): " n
+    [[ "$n" == "q" || -z "$n" ]] && exit 0
+    choice="${files[$((n - 1))]}"
+  fi
+  [[ -n "${choice:-}" ]] && start_video "$choice"
+}
+
+restore() {
+  if [[ -f "$PATH_FILE" ]]; then
+    local v
+    v=$(cat "$PATH_FILE")
+    if [[ -f "$v" ]]; then
+      start_video "$v"
+      return
+    fi
+  fi
+  echo "No previous video wallpaper to restore"
+}
+
+cmd="${1:-}"
+case "$cmd" in
+  stop)
+    stop
+    # restore last still image if known
+    if [[ -f "$HOME/.local/state/caelestia/wallpaper/path.txt" ]]; then
+      still=$(cat "$HOME/.local/state/caelestia/wallpaper/path.txt")
+      # avoid re-applying a video thumb path if that's what was saved
+      if [[ -f "$still" ]] && ! is_video "$still"; then
+        caelestia wallpaper -f "$still" 2>/dev/null || true
+      fi
+    fi
+    echo "Video wallpaper stopped"
+    ;;
+  stop-soft)
+    stop soft
+    ;;
+  pick) pick ;;
+  status) status ;;
+  restore) restore ;;
+  thumb)
+    shift
+    [[ $# -ge 1 ]] || { echo "Usage: video-wallpaper thumb <file>" >&2; exit 1; }
+    make_thumb "$1"
+    ;;
+  ""|help|-h|--help)
+    cat <<EOF
+Usage: video-wallpaper <file.mp4|pick|stop|status|restore|thumb <file>>
+
+Put videos in:
+  $VIDDIR
+  (also listed if under $WALL_DIR)
+
+Shortcuts (Hyprland):
+  Super+Alt+V        pick video wallpaper
+  Super+Alt+Shift+V  stop video wallpaper
+
+Also: pick any .mp4/.webm in Caelestia Wallpaper & style.
+EOF
+    ;;
+  *)
+    start_video "$cmd"
+    ;;
+esac

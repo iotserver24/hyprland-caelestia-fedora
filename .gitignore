@@ -1,0 +1,9 @@
+*.bak
+*.bak.*
+.DS_Store
+*.so
+*.o
+.cache/
+*.log
+scheme/current.lua
+scheme/current.conf

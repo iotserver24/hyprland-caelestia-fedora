@@ -1,0 +1,32 @@
+{
+    "background": {
+        "enabled": true,
+        "wallpaperEnabled": false
+    },
+    "general": {
+        "idle": {
+            "inhibitWhenAudio": true,
+            "inhibitWhenCharging": true,
+            "lockBeforeSleep": false,
+            "timeouts": [
+                {
+                    "idleAction": "dpms off",
+                    "returnAction": "dpms on",
+                    "timeout": 900
+                }
+            ]
+        }
+    },
+    "notifs": {
+        "actionOnClick": false,
+        "defaultExpireTimeout": 12000,
+        "expire": true,
+        "fullscreen": "on",
+        "fullscreenExpireTimeout": 4000,
+        "groupPreviewNum": 5,
+        "openExpanded": false
+    },
+    "paths": {
+        "wallpaperDir": "~/Pictures/Wallpapers"
+    }
+}
