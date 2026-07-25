@@ -110,12 +110,20 @@ fi
   echo "eDP-1"
 }
 
+CAELESTIA_PATH_TXT="${XDG_STATE_HOME:-$HOME/.local/state}/caelestia/wallpaper/path.txt"
+
 apply_scheme_from_thumb() {
   local thumb="$1"
+  local video_path="${2:-}"
   [[ -f "$thumb" ]] || return 0
-  # Use still image pipeline so colours / path stay consistent
+  # Extract colours from a frame without permanently making the thumb the wallpaper.
+  # caelestia wallpaper -f writes path.txt — restore the real video path after.
   if command -v caelestia >/dev/null 2>&1; then
     caelestia wallpaper -f "$thumb" -N 2>/dev/null || true
+  fi
+  if [[ -n "$video_path" ]]; then
+    mkdir -p "$(dirname "$CAELESTIA_PATH_TXT")"
+    printf '%s\n' "$video_path" > "$CAELESTIA_PATH_TXT"
   fi
 }
 
@@ -131,6 +139,9 @@ start_video() {
   fi
 
   printf '%s\n' "$VIDEO" > "$PATH_FILE"
+  # Also pin Caelestia's path.txt to the video so the launcher selection sticks
+  mkdir -p "$(dirname "$CAELESTIA_PATH_TXT")"
+  printf '%s\n' "$VIDEO" > "$CAELESTIA_PATH_TXT"
 
   local thumb=""
   thumb=$(make_thumb "$VIDEO" || true)
@@ -155,10 +166,11 @@ start_video() {
 
   # Optional colour scheme from a video frame (doesn't re-show still layer)
   if [[ -n "$thumb" && -f "$thumb" ]]; then
-    # Keep wallpaperEnabled false after scheme apply
+    # Keep wallpaperEnabled false after scheme apply; restore video in path.txt
     (
-      apply_scheme_from_thumb "$thumb"
+      apply_scheme_from_thumb "$thumb" "$VIDEO"
       set_wallpaper_enabled false
+      printf '%s\n' "$VIDEO" > "$CAELESTIA_PATH_TXT"
     ) &
   fi
 

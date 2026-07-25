@@ -72,9 +72,17 @@ Searcher {
         Quickshell.execDetached(["sh", "-c", "video-wallpaper stop-soft 2>/dev/null; caelestia wallpaper -r " + smartArg.join(" ")]);
     }
 
+    function persistCurrentPath(path: string): void {
+        // Keep path.txt in sync so FileView doesn't snap actualCurrent back
+        Quickshell.execDetached(["sh", "-c", `mkdir -p "$(dirname -- ${JSON.stringify(root.currentNamePath)})" && printf '%s\\n' ${JSON.stringify(path)} > ${JSON.stringify(root.currentNamePath)}`]);
+    }
+
     function setWallpaper(path: string): void {
         actualCurrent = path;
+        showPreview = false;
         if (isVideo(path)) {
+            // Write video path first so FileView reload does not revert selection
+            persistCurrentPath(path);
             Quickshell.execDetached(["video-wallpaper", path]);
             return;
         }
@@ -83,7 +91,9 @@ Searcher {
     }
 
     function preview(path: string): void {
-        // Videos: generate a frame thumb then preview colours from it
+        if (!path || path === previewPath && showPreview)
+            return;
+        // Videos: use cached frame thumb only (no blocking colour extract while scrolling)
         if (isVideo(path)) {
             previewVideoProc.command = ["sh", "-c", `t=$(video-wallpaper thumb ${JSON.stringify(path)} 2>/dev/null) && echo "$t"`];
             previewVideoProc.running = true;
@@ -143,6 +153,10 @@ Searcher {
                 wall = root.fallback;
                 Quickshell.execDetached(["caelestia", "wallpaper", "-f", root.fallback, ...root.smartArg]);
             }
+            // Ignore colour-scheme side-effects that briefly write a video thumb
+            // path into path.txt — keep the real video if one is playing.
+            if (wall && root.isVideo(root.actualCurrent) && !root.isVideo(wall) && wall.includes("/video-thumbs/"))
+                return;
             root.actualCurrent = wall;
             root.previewColourLock = false;
         }

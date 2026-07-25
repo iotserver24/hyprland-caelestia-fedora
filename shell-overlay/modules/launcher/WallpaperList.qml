@@ -15,6 +15,12 @@ PathView {
     required property var panels
     required property var content
 
+    // Keep carousel on the wallpaper the user is looking at — do NOT snap back to
+    // actualCurrent every time FileSystemModel rebuilds (downloads, thumbs, …).
+    property string focusedPath: ""
+    property string lastSearch: "\0" // force first sync
+    property bool suppressPreview: false
+
     readonly property int itemWidth: Tokens.sizes.launcher.wallpaperWidth * 0.8 + Tokens.padding.medium * 2
 
     readonly property int numItems: {
@@ -44,6 +50,58 @@ PathView {
         return visible;
     }
 
+    function indexOfPath(path: string): int {
+        if (!path)
+            return -1;
+        const vals = scriptModel.values;
+        for (let i = 0; i < vals.length; i++) {
+            if (vals[i]?.path === path)
+                return i;
+        }
+        return -1;
+    }
+
+    function syncIndex(forceToCurrent: bool): void {
+        // Don't fight the user while they scroll / flick
+        if (root.moving || root.flicking)
+            return;
+
+        const search = scriptModel.search;
+        let target = -1;
+
+        if (search) {
+            // Filtering: jump to first match only when the query string changes
+            if (forceToCurrent || search !== root.lastSearch)
+                target = 0;
+            else
+                target = root.indexOfPath(root.focusedPath);
+            if (target < 0)
+                target = 0;
+        } else if (forceToCurrent) {
+            target = root.indexOfPath(Wallpapers.actualCurrent);
+            if (target < 0)
+                target = 0;
+        } else {
+            // List rebuilt (new files etc.): stay on the item the user was viewing
+            target = root.indexOfPath(root.focusedPath);
+            if (target < 0)
+                target = root.indexOfPath(Wallpapers.actualCurrent);
+            if (target < 0)
+                target = root.currentIndex >= 0 ? Math.min(root.currentIndex, Math.max(0, scriptModel.values.length - 1)) : 0;
+        }
+
+        root.lastSearch = search;
+        if (target >= 0 && target !== root.currentIndex) {
+            root.suppressPreview = true;
+            root.currentIndex = target;
+            root.suppressPreview = false;
+        }
+        // Remember focused path from the resolved index
+        const item = root.currentItem as WallpaperItem;
+        if (item?.modelData?.path)
+            root.focusedPath = item.modelData.path;
+    }
+
     model: ScriptModel {
         id: scriptModel
 
@@ -61,15 +119,43 @@ PathView {
         }
 
         values: Wallpapers.query(search)
-        onValuesChanged: root.currentIndex = search ? 0 : values.findIndex(w => w.path === Wallpapers.actualCurrent)
+        onValuesChanged: root.syncIndex(false)
     }
 
-    Component.onCompleted: currentIndex = Wallpapers.list.findIndex(w => w.path === Wallpapers.actualCurrent)
+    // Re-sync when the filter text changes (not on every FS refresh)
+    Connections {
+        target: root.search
+        function onTextChanged(): void {
+            // Defer so scriptModel.search has updated
+            Qt.callLater(() => root.syncIndex(true));
+        }
+    }
+
+    Component.onCompleted: {
+        focusedPath = Wallpapers.actualCurrent;
+        syncIndex(true);
+    }
     Component.onDestruction: Wallpapers.stopPreview()
 
+    onMovementEnded: {
+        // After user scroll settles, lock focus to center item
+        const item = currentItem as WallpaperItem;
+        if (item?.modelData?.path)
+            focusedPath = item.modelData.path;
+    }
+
     onCurrentItemChanged: {
-        if (currentItem)
-            Wallpapers.preview((currentItem as WallpaperItem).modelData.path);
+        if (suppressPreview)
+            return;
+        if (!currentItem)
+            return;
+        const path = (currentItem as WallpaperItem).modelData.path;
+        if (path)
+            focusedPath = path;
+        // Debounce-ish: only preview when not mid-drag (preview stills only here;
+        // video thumbs are heavy and were contributing to list thrash)
+        if (!moving && !flicking)
+            Wallpapers.preview(path);
     }
 
     implicitWidth: Math.min(numItems, count) * itemWidth
