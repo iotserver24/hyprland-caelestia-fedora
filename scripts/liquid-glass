@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+"""Toggle / set Caelestia liquid-glass shell appearance in shell.json."""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+SHELL = Path.home() / ".config" / "caelestia" / "shell.json"
+STATE = Path.home() / ".config" / "caelestia" / "liquid-glass.state"
+
+GLASS = {
+    "enabled": True,
+    "base": 0.68,
+    "layers": 0.32,
+}
+SOLID = {
+    "enabled": False,
+    "base": 0.92,
+    "layers": 0.5,
+}
+ROUND_GLASS = 1.2
+ROUND_SOLID = 1.0
+ANIM_GLASS = 1.08
+ANIM_SOLID = 1.0
+
+
+def load() -> dict:
+    if SHELL.exists():
+        try:
+            return json.loads(SHELL.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            pass
+    return {}
+
+
+def save(data: dict) -> None:
+    SHELL.parent.mkdir(parents=True, exist_ok=True)
+    SHELL.write_text(json.dumps(data, indent=4) + "\n", encoding="utf-8")
+
+
+def apply(on: bool) -> bool:
+    data = load()
+    appearance = data.setdefault("appearance", {})
+    transparency = appearance.setdefault("transparency", {})
+    rounding = appearance.setdefault("rounding", {})
+    anim = appearance.setdefault("anim", {})
+    durations = anim.setdefault("durations", {})
+
+    preset = GLASS if on else SOLID
+    transparency.update(preset)
+    rounding["scale"] = ROUND_GLASS if on else ROUND_SOLID
+    durations["scale"] = ANIM_GLASS if on else ANIM_SOLID
+
+    save(data)
+    STATE.write_text("on\n" if on else "off\n", encoding="utf-8")
+    return on
+
+
+def is_on() -> bool:
+    if STATE.exists():
+        return STATE.read_text(encoding="utf-8").strip().lower() in ("on", "1", "true", "glass")
+    data = load()
+    tr = data.get("appearance", {}).get("transparency", {})
+    return bool(tr.get("enabled", False))
+
+
+def main(argv: list[str]) -> int:
+    cmd = (argv[1] if len(argv) > 1 else "status").lower()
+
+    if cmd in ("on", "glass", "enable"):
+        apply(True)
+        print("liquid-glass: on")
+        return 0
+    if cmd in ("off", "solid", "disable"):
+        apply(False)
+        print("liquid-glass: off")
+        return 0
+    if cmd in ("toggle", "t"):
+        now = apply(not is_on())
+        print(f"liquid-glass: {'on' if now else 'off'}")
+        return 0
+    if cmd in ("status", "get", "state"):
+        print("on" if is_on() else "off")
+        return 0
+
+    print("usage: liquid-glass [on|off|toggle|status]", file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))

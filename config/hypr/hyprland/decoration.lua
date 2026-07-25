@@ -2,7 +2,8 @@ local vars = require("variables")
 
 hl.config({
     decoration = {
-        rounding = vars.windowRounding,
+        rounding       = vars.windowRounding,
+        rounding_power = vars.windowRoundingPower or 2,
 
         blur = {
             enabled           = vars.blurEnabled,
@@ -14,6 +15,10 @@ hl.config({
             input_methods     = vars.blurInputMethods,
             size              = vars.blurSize,
             passes            = vars.blurPasses,
+            noise             = vars.blurNoise or 0.02,
+            contrast          = vars.blurContrast or 0.9,
+            brightness        = vars.blurBrightness or 1.05,
+            vibrancy          = vars.blurVibrancy or 0.28,
         },
 
         shadow = {

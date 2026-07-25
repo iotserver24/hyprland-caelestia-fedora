@@ -133,11 +133,15 @@ hl.layer_rule({ match = { namespace = "logout_dialog" }, animation = "popin 88%"
 hl.layer_rule({ match = { namespace = "selection" }, animation = "fade" })                  -- slurp
 hl.layer_rule({ match = { namespace = "wayfreeze" }, animation = "fade" })                  -- wayfreeze
 hl.layer_rule({ match = { namespace = "launcher" }, animation = "popin 80%", blur = true }) -- Fuzzel
-hl.layer_rule({ match = { namespace = "notifications" }, animation = "slide right" })
-hl.layer_rule({ match = { namespace = "osd" }, animation = "popin 90%" })
+hl.layer_rule({ match = { namespace = "notifications" }, animation = "slide right", blur = true })
+hl.layer_rule({ match = { namespace = "osd" }, animation = "popin 90%", blur = true })
 
--- Shell
+-- Shell (liquid glass: blur shell layers; ignore_alpha tuned by Colours.qml when transparency on)
 hl.layer_rule({ match = { namespace = "caelestia-(border-exclusion|area-picker)" }, no_anim = true })
-hl.layer_rule({ match = { namespace = "caelestia-(drawers|background)" }, animation = "fade" })
-hl.layer_rule({ match = { namespace = "caelestia-(launcher|session|utilities|sidebar|dashboard)" }, animation = "popin 88%" })
-hl.layer_rule({ match = { namespace = "caelestia-osd" }, animation = "popin 90%" })
+hl.layer_rule({ match = { namespace = "caelestia-(drawers|background)" }, animation = "fade", blur = true })
+hl.layer_rule({
+    match     = { namespace = "caelestia-(launcher|session|utilities|sidebar|dashboard|notifications)" },
+    animation = "popin 86%",
+    blur      = true,
+})
+hl.layer_rule({ match = { namespace = "caelestia-osd" }, animation = "popin 90%", blur = true })

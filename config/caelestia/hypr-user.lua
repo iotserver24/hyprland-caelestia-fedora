@@ -1,5 +1,8 @@
 -- User overrides for FA506NCR / Fedora (stuck lock / quote screen)
 
+local HOME = os.getenv("HOME") or ""
+local BIN  = HOME .. "/.local/bin"
+
 -- Do not re-lock after a crash (Hyprland lockdead / quote screen)
 -- Animate resizes / drag so float mode feels smoother
 hl.config({
@@ -10,7 +13,7 @@ hl.config({
     },
 })
 
-local CAELESTIA = os.getenv("HOME") .. "/.local/bin/caelestia"
+local CAELESTIA = BIN .. "/caelestia"
 
 -- Super + Alt + Escape → kill & restart shell (clears stuck lock UI)
 hl.bind("SUPER + ALT + Escape", function()
@@ -34,7 +37,7 @@ hl.bind("SUPER + slash", hl.dsp.global("caelestia:keybinds"))
 -- Super + Shift + Alt + M → restore last / focused minimized window
 -- Titlebar minimize buttons also work via hypr-minimize daemon (IPC)
 --------------------------------------------------
-local MINIMIZE = os.getenv("HOME") .. "/.local/bin/hypr-minimize"
+local MINIMIZE = BIN .. "/hypr-minimize"
 
 hl.bind("SUPER + SHIFT + M", hl.dsp.exec_cmd(MINIMIZE))
 hl.bind("SUPER + ALT + M", hl.dsp.exec_cmd(MINIMIZE .. " show"))
@@ -81,10 +84,77 @@ end)
 
 -- Video wallpaper picker (Super + Alt + V). Stop with: video-wallpaper stop
 hl.bind("SUPER + ALT + V", function()
-    hl.dispatch(hl.dsp.exec_cmd(os.getenv("HOME") .. "/.local/bin/video-wallpaper pick"))
+    hl.dispatch(hl.dsp.exec_cmd(BIN .. "/video-wallpaper pick"))
 end)
 hl.bind("SUPER + ALT + SHIFT + V", function()
-    hl.dispatch(hl.dsp.exec_cmd(os.getenv("HOME") .. "/.local/bin/video-wallpaper stop"))
+    hl.dispatch(hl.dsp.exec_cmd(BIN .. "/video-wallpaper stop"))
+end)
+
+--------------------------------------------------
+-- Liquid glass (iOS-style frosted UI)
+-- Super + Alt + G  → toggle glass / solid
+--------------------------------------------------
+local LIQUID_GLASS = BIN .. "/liquid-glass"
+local GLASS_STATE  = HOME .. "/.config/caelestia/liquid-glass.state"
+
+local function glass_state_on()
+    local f = io.open(GLASS_STATE, "r")
+    if not f then
+        return true -- default on
+    end
+    local s = (f:read("*l") or "on"):lower()
+    f:close()
+    return s == "on" or s == "1" or s == "true" or s == "glass"
+end
+
+local liquidGlassOn = glass_state_on()
+
+local function apply_liquid_glass(on)
+    liquidGlassOn = on
+
+    -- Shell transparency + rounding (writes shell.json; Caelestia hot-reloads)
+    os.execute(string.format("%s %s >/dev/null 2>&1", LIQUID_GLASS, on and "on" or "off"))
+
+    -- Hypr window chrome
+    hl.config({
+        decoration = {
+            rounding       = on and 24 or 12,
+            rounding_power = on and 2.4 or 2.0,
+            blur = {
+                enabled    = true,
+                size       = on and 14 or 6,
+                passes     = on and 3 or 2,
+                noise      = on and 0.02 or 0.0117,
+                contrast   = on and 0.9 or 0.8916,
+                brightness = on and 1.05 or 1.0,
+                vibrancy   = on and 0.28 or 0.12,
+            },
+            shadow = {
+                enabled      = true,
+                range        = on and 28 or 14,
+                render_power = on and 3 or 4,
+            },
+        },
+    })
+
+    -- Soft app windows vs solid
+    hl.window_rule({
+        match   = { fullscreen = false },
+        opacity = (on and "0.88" or "1.0") .. " override",
+    })
+end
+
+-- Apply saved profile on config load
+apply_liquid_glass(liquidGlassOn)
+
+hl.bind("SUPER + ALT + G", function()
+    apply_liquid_glass(not liquidGlassOn)
+    hl.notification.create({
+        text = liquidGlassOn
+            and "Liquid Glass ON\nFrosted panels · soft blur · translucent windows"
+            or  "Liquid Glass OFF\nSolid UI · lighter GPU cost",
+        timeout = 2600,
+    })
 end)
 
 --------------------------------------------------

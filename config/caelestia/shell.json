@@ -1,4 +1,19 @@
 {
+    "appearance": {
+        "anim": {
+            "durations": {
+                "scale": 1.08
+            }
+        },
+        "rounding": {
+            "scale": 1.2
+        },
+        "transparency": {
+            "base": 0.68,
+            "enabled": true,
+            "layers": 0.32
+        }
+    },
     "background": {
         "enabled": true,
         "wallpaperEnabled": false

@@ -6,6 +6,7 @@ Includes:
 
 | Feature | What you get |
 |--------|----------------|
+| **Liquid glass UI** | Frosted panels, soft blur, translucent windows (iOS-style glass) |
 | **Hyprland Lua config** | Animations, float mode, keybinds, rules |
 | **Caelestia shell overlay** | Notifications dashboard tab, keybind cheatsheet, video wallpapers in `>wallpaper`, notif history |
 | **Minimize that works** | `hypr-minimize` + optional titlebar fix (`hypr-minifix.so`) |
@@ -84,9 +85,24 @@ gcc -shared -fPIC -O2 -o ~/.local/lib/hypr-minifix.so minifix/hypr-minifix.c -ld
 | `Super + Alt + M` | Show minimized windows |
 | `Super + Alt + V` | Video wallpaper picker |
 | `Super + Alt + A` | Fancy / snappy animations |
+| `Super + Alt + G` | Toggle **liquid glass** / solid UI |
 | `>wallpaper` | Launcher wallpaper carousel (images **+** videos) |
 
 Open the **top dashboard** → **Notifications** tab for notification history UI.
+
+### Liquid glass
+
+On by default. Frosted Caelestia panels + Hypr blur + soft window opacity.
+
+```bash
+liquid-glass on      # shell transparency + glass tokens
+liquid-glass off     # solid UI
+liquid-glass toggle  # flip
+liquid-glass status
+# or Super + Alt + G
+```
+
+If blur feels heavy on weaker GPUs, turn glass off or lower `blurSize` / `blurPasses` in `~/.config/hypr/variables.lua`.
 
 ---
 

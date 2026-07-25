@@ -243,6 +243,8 @@ Item {
 
         radius: Tokens.rounding.extraLarge
         color: Colours.layer(Colours.palette.m3surfaceContainerHigh, 2)
+        border.width: Colours.transparency.enabled ? 1 : 0
+        border.color: Qt.rgba(1, 1, 1, Colours.light ? 0.22 : 0.12)
         implicitHeight: chipRow.implicitHeight + Tokens.padding.medium * 2
 
         RowLayout {
@@ -304,6 +306,10 @@ Item {
 
         radius: Tokens.rounding.large
         color: notif && notif.urgency === NotificationUrgency.Critical ? Colours.palette.m3errorContainer : Colours.layer(Colours.palette.m3surfaceContainerHighest, 2)
+        border.width: Colours.transparency.enabled ? 1 : 0
+        border.color: notif && notif.urgency === NotificationUrgency.Critical
+            ? Qt.alpha(Colours.palette.m3error, 0.4)
+            : Qt.rgba(1, 1, 1, Colours.light ? 0.24 : 0.12)
         clip: true
         implicitHeight: cardCol.implicitHeight + Tokens.padding.medium * 2
 

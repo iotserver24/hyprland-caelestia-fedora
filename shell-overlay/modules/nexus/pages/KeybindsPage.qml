@@ -32,6 +32,10 @@ PageBase {
                     action: qsTr("Toggle enhanced animations (snappy / fancy)")
                 },
                 {
+                    keys: "Super + Alt + G",
+                    action: qsTr("Toggle liquid glass / solid UI")
+                },
+                {
                     keys: "Super + Shift + M",
                     action: qsTr("Minimize focused window")
                 },

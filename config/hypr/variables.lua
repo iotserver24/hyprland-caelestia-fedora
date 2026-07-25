@@ -19,33 +19,38 @@ return {
     workspaceSwipeFingers      = 4,
     gestureFingersMore         = 4,
 
-    -- Blur
+    -- Blur (liquid glass defaults — Super+Alt+G toggles live)
     blurEnabled                = true,
     blurSpecialWs              = false,
     blurPopups                 = true,
     blurInputMethods           = true,
-    blurSize                   = 8,
-    blurPasses                 = 2,
+    blurSize                   = 14,
+    blurPasses                 = 3,
     blurXray                   = false,
+    blurNoise                  = 0.02,
+    blurContrast               = 0.9,
+    blurBrightness             = 1.05,
+    blurVibrancy               = 0.28,
 
-    -- Shadow
+    -- Shadow (soft, diffused glass depth)
     shadowEnabled              = true,
-    shadowRange                = 15,
-    shadowRenderPower          = 4,
-    shadowColour               = "rgba(" .. scheme.inversePrimary .. "10)",
+    shadowRange                = 28,
+    shadowRenderPower          = 3,
+    shadowColour               = "rgba(" .. scheme.inversePrimary .. "18)",
 
     -- Gaps
     workspaceGaps              = 20,
-    windowGapsIn               = 5,
-    windowGapsOut              = 10,
-    singleWindowGapsOut        = 20,
+    windowGapsIn               = 6,
+    windowGapsOut              = 12,
+    singleWindowGapsOut        = 22,
 
-    -- Window styling
-    windowOpacity              = 0.95,
-    windowRounding             = 15,
+    -- Window styling (liquid glass)
+    windowOpacity              = 0.88,
+    windowRounding             = 24,
+    windowRoundingPower        = 2.4, -- slightly squircle
     windowBorderSize           = 1,
-    activeWindowBorderColour   = "rgba(" .. scheme.primary .. "e6)",
-    inactiveWindowBorderColour = "rgba(" .. scheme.onSurfaceVariant .. "11)",
+    activeWindowBorderColour   = "rgba(" .. scheme.primary .. "cc)",
+    inactiveWindowBorderColour = "rgba(" .. scheme.onSurfaceVariant .. "22)",
 
     -- Misc
     volumeStep                 = 10,

@@ -79,10 +79,15 @@ fi
 # ── Scripts ──────────────────────────────────────────────
 c_info "Installing scripts → ~/.local/bin"
 run mkdir -p "$HOME/.local/bin" "$HOME/.local/lib"
-for s in hypr-minimize video-wallpaper; do
+for s in hypr-minimize video-wallpaper liquid-glass; do
   run install -m 755 "$ROOT/scripts/$s" "$HOME/.local/bin/$s"
   c_ok "$s"
 done
+# default liquid-glass on for fresh installs
+if [[ "$DRY" == 0 ]]; then
+  echo on > "$HOME/.config/caelestia/liquid-glass.state" 2>/dev/null || true
+  "$HOME/.local/bin/liquid-glass" on >/dev/null 2>&1 || true
+fi
 
 # ── Minifix (titlebar minimize) ──────────────────────────
 if command -v gcc >/dev/null 2>&1; then
