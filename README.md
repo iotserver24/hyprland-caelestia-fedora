@@ -92,6 +92,15 @@ Open the **top dashboard** → **Notifications** tab for notification history UI
 
 ### Liquid glass
 
+Real **liquid-glass material** (not flat glassmorphism):
+
+- `LiquidGlassRect` — specular rim, top light wash, depth shadow, crystalline plate
+- Applied to dashboard cards, media tab, notifications, chrome
+- Hypr blur under UI only (wallpaper stays sharp)
+- Toggle: `Super + Alt + G` / `liquid-glass on|off`
+
+### Liquid glass
+
 On by default. Frosted Caelestia panels + Hypr blur + soft window opacity.
 
 ```bash

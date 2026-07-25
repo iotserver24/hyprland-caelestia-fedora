@@ -122,16 +122,16 @@ local function apply_liquid_glass(on)
             rounding_power = on and 2.4 or 2.0,
             blur = {
                 enabled    = true,
-                size       = on and 14 or 6,
-                passes     = on and 3 or 2,
-                noise      = on and 0.02 or 0.0117,
-                contrast   = on and 0.9 or 0.8916,
-                brightness = on and 1.05 or 1.0,
-                vibrancy   = on and 0.28 or 0.12,
+                size       = on and 18 or 6,
+                passes     = on and 4 or 2,
+                noise      = on and 0.015 or 0.0117,
+                contrast   = on and 0.88 or 0.8916,
+                brightness = on and 1.08 or 1.0,
+                vibrancy   = on and 0.38 or 0.12,
             },
             shadow = {
                 enabled      = true,
-                range        = on and 28 or 14,
+                range        = on and 32 or 14,
                 render_power = on and 3 or 4,
             },
         },
@@ -151,7 +151,7 @@ hl.bind("SUPER + ALT + G", function()
     apply_liquid_glass(not liquidGlassOn)
     hl.notification.create({
         text = liquidGlassOn
-            and "Liquid Glass ON\nFrosted panels · soft blur · translucent windows"
+            and "Liquid Glass ON\nSpecular rims · Hypr blur · wet-glass plates"
             or  "Liquid Glass OFF\nSolid UI · lighter GPU cost",
         timeout = 2600,
     })

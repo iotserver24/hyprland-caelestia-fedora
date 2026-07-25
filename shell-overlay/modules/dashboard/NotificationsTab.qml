@@ -233,7 +233,7 @@ Item {
     }
 
     // ── Stat chip ───────────────────────────────────────────
-    component StatChip: StyledRect {
+    component StatChip: LiquidGlassRect {
         id: chip
 
         property string icon
@@ -242,9 +242,9 @@ Item {
         property color accent: Colours.palette.m3primary
 
         radius: Tokens.rounding.extraLarge
-        color: Colours.layer(Colours.palette.m3surfaceContainerHigh, 2)
-        border.width: Colours.transparency.enabled ? 1 : 0
-        border.color: Qt.rgba(1, 1, 1, Colours.light ? 0.22 : 0.12)
+        color: Colours.palette.m3surfaceContainerHigh
+        intensity: Colours.transparency.enabled ? 1 : 0
+        elevation: 2
         implicitHeight: chipRow.implicitHeight + Tokens.padding.medium * 2
 
         RowLayout {
@@ -288,7 +288,7 @@ Item {
     }
 
     // ── Notification card ───────────────────────────────────
-    component NotifCard: StyledRect {
+    component NotifCard: LiquidGlassRect {
         id: card
 
         property var notif
@@ -304,12 +304,11 @@ Item {
             return Colours.palette.m3primary;
         }
 
-        radius: Tokens.rounding.large
-        color: notif && notif.urgency === NotificationUrgency.Critical ? Colours.palette.m3errorContainer : Colours.layer(Colours.palette.m3surfaceContainerHighest, 2)
-        border.width: Colours.transparency.enabled ? 1 : 0
-        border.color: notif && notif.urgency === NotificationUrgency.Critical
-            ? Qt.alpha(Colours.palette.m3error, 0.4)
-            : Qt.rgba(1, 1, 1, Colours.light ? 0.24 : 0.12)
+        radius: Tokens.rounding.extraLarge
+        color: notif && notif.urgency === NotificationUrgency.Critical ? Colours.palette.m3errorContainer : Colours.palette.m3surfaceContainerHighest
+        critical: !!(notif && notif.urgency === NotificationUrgency.Critical)
+        intensity: Colours.transparency.enabled ? 1 : 0
+        elevation: 3
         clip: true
         implicitHeight: cardCol.implicitHeight + Tokens.padding.medium * 2
 

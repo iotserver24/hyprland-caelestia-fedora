@@ -9,9 +9,9 @@
             "scale": 1.2
         },
         "transparency": {
-            "base": 0.48,
+            "base": 0.4,
             "enabled": true,
-            "layers": 0.28
+            "layers": 0.24
         }
     },
     "background": {

@@ -46,16 +46,16 @@ Singleton {
         return Qt.rgba(r, g, b, a);
     }
 
-    // Liquid glass: lift dark M3 surfaces toward a frosted plate so alpha is
-    // actually visible (plain dark@0.4 over a dark terminal looks "solid").
+    // Liquid glass plate: crystalline lift + enough alpha for Hypr blur to read
+    // through. Tuned for dark mode so panels look like wet glass, not mud.
     function frost(c: color, a: real, depth: int): color {
-        const mix = light ? 0.28 : Math.min(0.55, 0.38 + depth * 0.06);
-        const frostL = light ? 0.94 : 0.62;
+        const mix = light ? 0.38 : Math.min(0.62, 0.48 + depth * 0.05);
+        const frostL = light ? 0.96 : 0.72;
         const r = c.r * (1 - mix) + frostL * mix;
         const g = c.g * (1 - mix) + frostL * mix;
-        const b = c.b * (1 - mix) + (frostL + 0.02) * mix;
-        // Keep enough alpha to read UI, but low enough to show content behind
-        const alpha = Math.max(0.22, Math.min(0.72, a));
+        const b = c.b * (1 - mix) + (frostL + 0.04) * mix;
+        // Clearer than glassmorphism mud — leave room for specular layers
+        const alpha = Math.max(0.16, Math.min(0.58, a * 0.92));
         return Qt.rgba(r, g, b, alpha);
     }
 
@@ -68,7 +68,13 @@ Singleton {
 
         const depth = layer ?? 1;
         const lifted = alterColour(c, 1, depth);
-        return frost(lifted, transparency.layers + depth * 0.04, depth);
+        return frost(lifted, transparency.layers + depth * 0.03, depth);
+    }
+
+    // Specular white for liquid-glass rims / highlights
+    function glassRim(strength: real): color {
+        const s = Math.max(0, Math.min(1, strength ?? 0.45));
+        return Qt.rgba(1, 1, 1, (light ? 0.55 : 0.4) * s);
     }
 
     function on(c: color): color {

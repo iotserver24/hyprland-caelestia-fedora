@@ -42,8 +42,16 @@ StyledWindow {
     readonly property real shadowOpacity: 0.7 * (1 - fsTransitionProg)
     readonly property real borderLayoutThickness: hasFullscreen ? 0 : contentItem.Config.border.thickness
 
-    // Liquid glass surface — frost lift is applied in Colours.layer when transparency is on
-    property color surfaceColour: Colours.transparency.enabled ? Colours.layer(Colours.palette.m3surface, 0) : Colours.palette.m3surface
+    // Liquid glass chrome — clearer plate so Hypr blur + specular read as wet glass
+    property color surfaceColour: {
+        if (!Colours.transparency.enabled)
+            return Colours.palette.m3surface;
+        const c = Colours.palette.m3surface;
+        const frost = Colours.light ? 0.92 : 0.7;
+        const mix = Colours.light ? 0.4 : 0.55;
+        const a = Math.max(0.2, Math.min(0.5, Colours.transparency.base * 0.85));
+        return Qt.rgba(c.r * (1 - mix) + frost * mix, c.g * (1 - mix) + frost * mix, c.b * (1 - mix) + (frost + 0.04) * mix, a);
+    }
 
     readonly property int dragMaskPadding: {
         if (focusGrab.active || panels.popouts.isDetached)

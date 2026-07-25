@@ -12,7 +12,7 @@ import qs.components.effects
 import qs.services
 import qs.utils
 
-StyledRect {
+LiquidGlassRect {
     id: root
 
     required property NotifData modelData
@@ -22,13 +22,11 @@ StyledRect {
     readonly property int nonAnimHeight: summary.implicitHeight + (root.expanded ? Tokens.spacing.extraSmall * 2 + appName.height + body.height + actions.height + actions.anchors.topMargin : bodyPreview.height) + inner.anchors.margins * 2
     property bool expanded: Config.notifs.openExpanded
 
-    color: root.modelData.urgency === NotificationUrgency.Critical ? Colours.palette.m3secondaryContainer : Colours.tPalette.m3surfaceContainer
-    radius: Tokens.rounding.large
-    // Liquid glass rim — soft specular edge
-    border.width: Colours.transparency.enabled ? 1 : 0
-    border.color: root.modelData.urgency === NotificationUrgency.Critical
-        ? Qt.alpha(Colours.palette.m3error, 0.35)
-        : Qt.rgba(1, 1, 1, Colours.light ? 0.28 : 0.14)
+    color: root.modelData.urgency === NotificationUrgency.Critical ? Colours.palette.m3secondaryContainer : Colours.palette.m3surfaceContainer
+    radius: Tokens.rounding.extraLarge
+    critical: root.modelData.urgency === NotificationUrgency.Critical
+    intensity: Colours.transparency.enabled ? 1 : 0
+    elevation: 4
 
     implicitHeight: inner.implicitHeight
 
