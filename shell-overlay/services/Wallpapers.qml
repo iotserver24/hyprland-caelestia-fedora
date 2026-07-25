@@ -94,7 +94,8 @@ Searcher {
         const pathExport = `export PATH=${JSON.stringify(root.binDir + ":")}"$PATH"`;
 
         if (isVideo(path)) {
-            // Pin path.txt to the video so selection sticks, then start mpvpaper
+            // Remember path for UI selection; start mpvpaper (hides still layer).
+            // Do not feed video paths to `caelestia wallpaper -f` — it rejects non-images.
             persistCurrentPath(path);
             Quickshell.execDetached(["sh", "-c", `${pathExport}; ${vw} ${pathQ}`]);
             return;
@@ -102,6 +103,8 @@ Searcher {
 
         // Full stop --no-restore (not stop-soft): re-enables wallpaperEnabled so stills paint.
         // stop-soft left wallpaperEnabled=false after video → "selected but blank desktop".
+        // Persist image path first so any concurrent FileView reload sees a valid image.
+        persistCurrentPath(path);
         Quickshell.execDetached(["sh", "-c", `${pathExport}; ${vw} stop --no-restore 2>/dev/null; ${ca} wallpaper -f ${pathQ} ${smart}`]);
     }
 
