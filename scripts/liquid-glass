@@ -12,8 +12,8 @@ STATE = Path.home() / ".config" / "caelestia" / "liquid-glass.state"
 
 GLASS = {
     "enabled": True,
-    "base": 0.68,
-    "layers": 0.32,
+    "base": 0.48,
+    "layers": 0.28,
 }
 SOLID = {
     "enabled": False,
