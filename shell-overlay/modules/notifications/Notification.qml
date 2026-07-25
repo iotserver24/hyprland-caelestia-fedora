@@ -38,8 +38,10 @@ LiquidGlassRect {
     Component.onDestruction: modelData.unlock(this)
 
     Behavior on x {
-        Anim {
-            easing: Tokens.anim.emphasizedDecel
+        NumberAnimation {
+            duration: Colours.transparency.enabled ? 480 : 280
+            easing.type: Colours.transparency.enabled ? Easing.OutBack : Easing.OutCubic
+            easing.overshoot: 1.25
         }
     }
 
