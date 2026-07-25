@@ -136,9 +136,10 @@ hl.layer_rule({ match = { namespace = "launcher" }, animation = "popin 80%", blu
 hl.layer_rule({ match = { namespace = "notifications" }, animation = "slide right", blur = true })
 hl.layer_rule({ match = { namespace = "osd" }, animation = "popin 90%", blur = true })
 
--- Shell (liquid glass: blur shell layers; ignore_alpha tuned by Colours.qml when transparency on)
+-- Shell (liquid glass: blur UI only — NEVER the wallpaper / background layer)
 hl.layer_rule({ match = { namespace = "caelestia-(border-exclusion|area-picker)" }, no_anim = true })
-hl.layer_rule({ match = { namespace = "caelestia-(drawers|background)" }, animation = "fade", blur = true })
+hl.layer_rule({ match = { namespace = "caelestia-background" }, animation = "fade", blur = false })
+hl.layer_rule({ match = { namespace = "caelestia-drawers" }, animation = "fade", blur = true })
 hl.layer_rule({
     match     = { namespace = "caelestia-(launcher|session|utilities|sidebar|dashboard|notifications)" },
     animation = "popin 86%",
